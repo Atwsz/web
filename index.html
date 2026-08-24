@@ -95,13 +95,22 @@ if(urlCat) category = urlCat;
 
 function loginGoogle(){
     const provider = new firebase.auth.GoogleAuthProvider();
-    auth.signInWithPopup(provider).catch(e=>{
-        if(["auth/popup-blocked","auth/popup-closed-by-user","auth/cancelled-popup-request"].includes(e.code)){
-            auth.signInWithRedirect(provider);
-        } else {
-            alert("ล็อกอินไม่สำเร็จ: " + e.code);
-        }
-    });
+    const isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+
+    if(isLocal){
+        // localhost — ใช้ popup ได้
+        auth.signInWithPopup(provider).catch(e=>{
+            // popup ไม่ได้ -> เปลี่ยนเป็น redirect เงียบ ๆ (ไม่แจ้งเตือน)
+            if(["auth/popup-blocked","auth/popup-closed-by-user","auth/cancelled-popup-request","auth/operation-not-supported-in-this-environment"].includes(e.code)){
+                auth.signInWithRedirect(provider);
+            } else if(e.code !== "auth/popup-closed-by-user"){
+                alert("ล็อกอินไม่สำเร็จ: " + e.message);
+            }
+        });
+    } else {
+        // GitHub Pages ฯลฯ — ใช้ redirect (popup มักโดนบล็อก)
+        auth.signInWithRedirect(provider);
+    }
 }
 
 function logoutGoogle(){
@@ -109,7 +118,10 @@ function logoutGoogle(){
 }
 
 auth.getRedirectResult().catch(e=>{
-    if(e && e.code !== "auth/no-auth-event") alert("ล็อกอินไม่สำเร็จ: " + e.code);
+    // แจ้งเฉพาะล็อกอินล้มเหลวจริง ๆ
+    if(e && !["auth/no-auth-event","auth/operation-not-supported-in-this-environment"].includes(e.code)){
+        alert("ล็อกอินไม่สำเร็จ: " + e.message);
+    }
 });
 
 auth.onAuthStateChanged(user=>{

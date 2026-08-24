@@ -19,6 +19,10 @@
         <a href="#" onclick="goBack(event)">← ย้อนกลับ</a>
     </div>
     <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
+    <div class="user-chip" id="userChip" onclick="if(!currentUser) loginGoogle()" style="cursor:pointer;" title="ล็อกอินด้วย Google">
+        <img id="userPic" src="https://i.postimg.cc/fbFQQ9SR/6864ba7f1ec7fd24faca21b08d282036.jpg" alt="">
+        <span id="userName">Login</span>
+    </div>
 </nav>
 
 <div id="detailWrap">
@@ -122,12 +126,48 @@ let hoverVal = 0;
 
 // ---------- Auth (สถานะล็อกอินมาจากหน้าหลัก) ----------
 
+function loginGoogle(){
+    const provider = new firebase.auth.GoogleAuthProvider();
+    const isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+
+    if(isLocal){
+        auth.signInWithPopup(provider).catch(e=>{
+            // popup ไม่ได้ -> เปลี่ยนเป็น redirect เงียบ ๆ (ไม่แจ้งเตือน)
+            if(["auth/popup-blocked","auth/popup-closed-by-user","auth/cancelled-popup-request","auth/operation-not-supported-in-this-environment"].includes(e.code)){
+                auth.signInWithRedirect(provider);
+            } else if(e.code !== "auth/popup-closed-by-user"){
+                alert("ล็อกอินไม่สำเร็จ: " + e.message);
+            }
+        });
+    } else {
+        auth.signInWithRedirect(provider);
+    }
+}
+
+// รับผลลัพธ์จาก redirect login (GitHub Pages)
+auth.getRedirectResult().catch(e=>{
+    // แจ้งเฉพาะล็อกอินล้มเหลวจริง ๆ (ไม่ใช่สถานะปกติ)
+    if(e && !["auth/no-auth-event","auth/operation-not-supported-in-this-environment"].includes(e.code)){
+        console.error(e);
+        alert("ล็อกอิน Google ไม่สำเร็จ: " + e.message);
+    }
+});
+
 auth.onAuthStateChanged(async user=>{
     // ยอมรับเฉพาะบัญชี Google เท่านั้น
     const isGoogle = user && user.providerData.some(p=> p.providerId === "google.com");
     currentUser = isGoogle ? user : null;
-    document.getElementById("googleLoginBtn").style.display = currentUser ? "none" : "inline-flex";
 
+    // อัปเดตโปรไฟล์มุมขวาบน
+    const pic = document.getElementById("userPic");
+    const name = document.getElementById("userName");
+    if(currentUser){
+        pic.src = currentUser.photoURL || "https://i.postimg.cc/fbFQQ9SR/6864ba7f1ec7fd24faca21b08d282036.jpg";
+        name.textContent = (currentUser.displayName || "ผู้ใช้").split(" ")[0];
+    } else {
+        pic.src = "https://i.postimg.cc/fbFQQ9SR/6864ba7f1ec7fd24faca21b08d282036.jpg";
+        name.textContent = "Login";
+    }
     // ปุ่มเคลียร์โหวตของฉัน
     document.getElementById("clearVoteBtn").style.display =
         (currentUser && myVoteFromDb) ? "inline-block" : "none";
@@ -158,8 +198,8 @@ function renderStars(){
     const info = document.getElementById("voteInfo");
     if(!currentUser){
         info.innerHTML = ratingData.count
-            ? `คะแนนเฉลี่ย ${avg.toFixed(1)} (${ratingData.count} โหวต) · <span class="emoji">🔒</span> ล็อกอินเพื่อโหวต`
-            : `<span class="emoji">🔒</span> ล็อกอินเพื่อโหวต`;
+            ? `คะแนนเฉลี่ย ${avg.toFixed(1)} (${ratingData.count} โหวต)`
+            : "ยังไม่มีคนโหวต";
     } else if(hoverVal){
         info.textContent = `โหวต ${hoverVal} คะแนน?`;
     } else {
