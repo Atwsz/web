@@ -154,16 +154,15 @@ auth.getRedirectResult().catch(e=>{
 });
 
 auth.onAuthStateChanged(async user=>{
-    // ยอมรับเฉพาะบัญชี Google เท่านั้น
-    const isGoogle = user && user.providerData.some(p=> p.providerId === "google.com");
-    currentUser = isGoogle ? user : null;
+    // ล็อกอินอะไรก็ได้ (Google หรือ Email/Password แอดมิน)
+    currentUser = user || null;
 
     // อัปเดตโปรไฟล์มุมขวาบน
     const pic = document.getElementById("userPic");
     const name = document.getElementById("userName");
     if(currentUser){
         pic.src = currentUser.photoURL || "https://i.postimg.cc/fbFQQ9SR/6864ba7f1ec7fd24faca21b08d282036.jpg";
-        name.textContent = (currentUser.displayName || "ผู้ใช้").split(" ")[0];
+        name.textContent = (currentUser.displayName || currentUser.email || "ผู้ใช้").split("@")[0].split(" ")[0];
     } else {
         pic.src = "https://i.postimg.cc/fbFQQ9SR/6864ba7f1ec7fd24faca21b08d282036.jpg";
         name.textContent = "Login";
@@ -213,19 +212,21 @@ function renderStars(){
 
     row.innerHTML = "";
 
-    // 5 ดาวเต็ม = 1-5 คะแนน
+    // 5 ดาวเต็ม = 1-5 คะแนน — คลิกแล้วโหวตเลย
     for(let i=1; i<=5; i++){
         const star = document.createElement("span");
         star.className = "star" + (show >= i ? " filled" : "");
         star.textContent = "★";
+        star.style.cursor = "pointer";
+        star.title = `โหวต ${i} คะแนน`;
 
         if(currentUser){
-            star.style.cursor = "pointer";
             star.onmouseenter = ()=>{ hoverVal = i; renderStars(); };
             star.onclick = ()=> vote(i);
         } else {
-            star.style.cursor = "pointer";
-            star.onclick = ()=>{ alert("กรุณาล็อกอินด้วย Google ก่อนโหวต"); loginGoogle(); };
+            star.onclick = ()=>{
+                alert("ล็อกอินก่อนโหวต — กดโปรไฟล์ Login มุมขวาบน");
+            };
         }
 
         row.appendChild(star);
@@ -239,8 +240,7 @@ function renderStars(){
 
 async function vote(score){
     if(!currentUser){
-        alert("กรุณาล็อกอินด้วย Google ก่อนโหวต");
-        loginGoogle();
+        alert("ล็อกอินก่อนโหวต — กดโปรไฟล์ Login มุมขวาบน");
         return;
     }
 
