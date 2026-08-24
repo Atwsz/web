@@ -212,22 +212,20 @@ function renderStars(){
 
     row.innerHTML = "";
 
-    // 5 ดาวเต็ม = 1-5 คะแนน — คลิกแล้วโหวตเลย
+    // 5 ดาวเต็ม = 1-5 คะแนน — คลิกแล้วโหวตเลย (handler ใส่เสมอ)
     for(let i=1; i<=5; i++){
         const star = document.createElement("span");
         star.className = "star" + (show >= i ? " filled" : "");
         star.textContent = "★";
         star.style.cursor = "pointer";
         star.title = `โหวต ${i} คะแนน`;
+        star.dataset.score = i;
 
         if(currentUser){
             star.onmouseenter = ()=>{ hoverVal = i; renderStars(); };
-            star.onclick = ()=> vote(i);
-        } else {
-            star.onclick = ()=>{
-                alert("ล็อกอินก่อนโหวต — กดโปรไฟล์ Login มุมขวาบน");
-            };
         }
+        // คลิกได้ตลอด — เช็คล็อกอินใน vote()
+        star.onclick = ()=> vote(i);
 
         row.appendChild(star);
     }
@@ -235,6 +233,14 @@ function renderStars(){
     // ออกจาก hover
     row.onmouseleave = ()=>{ if(hoverVal){ hoverVal = 0; renderStars(); } };
 }
+
+// สำรอง: event delegation ที่แถวดาว — คลิกดาวดวงไหนก็โหวตเสมอ
+document.getElementById("starRow").addEventListener("click", e=>{
+    const star = e.target.closest(".star");
+    if(!star) return;
+    const score = Number(star.dataset.score);
+    if(score) vote(score);
+});
 
 // ---------- โหวต / แก้คะแนน ----------
 
