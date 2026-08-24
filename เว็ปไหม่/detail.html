@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LORN·TL - รายละเอียดมังงะ</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+</head>
+
+<body>
+
+<nav class="navbar">
+    <a href="index.html" class="logo"><span>LORN·TL</span></a>
+    <div class="nav-menu">
+        <a href="index.html">🏠 หน้าแรก</a>
+        <a href="#" onclick="goBack(event)">← ย้อนกลับ</a>
+    </div>
+    <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
+</nav>
+
+<div id="detailWrap">
+
+    <div class="detail-banner">
+        <img class="bg" id="bannerImg" src="">
+    </div>
+
+    <div class="detail-content">
+        <img class="detail-cover" id="coverImg" src="">
+
+        <div class="detail-info">
+            <h1 id="dTitle">กำลังโหลด...</h1>
+            <p class="thai-title" id="dThaiTitle"></p>
+
+            <div class="genre-tags" id="genreTags"></div>
+
+            <div class="stat-row">
+                <div class="stat-box"><b id="dRating">5.0 ★</b><small>เรตติ้ง</small></div>
+                <div class="stat-box"><b id="dViews">0</b><small>Views</small></div>
+                <div class="stat-box"><b id="dChapters">0</b><small>ตอนทั้งหมด</small></div>
+            </div>
+
+            <div class="vote-box" id="voteBox">
+                <span><span class="emoji">⭐</span> ให้คะแนนเรื่องนี้:</span>
+                <div class="stars" id="starRow"></div>
+                <span class="vote-info" id="voteInfo"></span>
+                <button class="btn-outline" id="clearVoteBtn" onclick="clearMyVote()" style="display:none; padding:8px 16px; font-size:13px;"><span class="emoji">🗑️</span> ลบโหวตของฉัน</button>
+            </div>
+
+            <p class="synopsis" id="dSynopsis">กำลังโหลดเรื่องย่อ...</p>
+
+            <div class="cta-row">
+                <a href="#" class="btn-read" id="readBtn"><span class="emoji">📖</span> อ่านเลย</a>
+                <button class="btn-ghost" id="bmBtn" onclick="toggleBm()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                    เพิ่มบุ๊กมาร์ก
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> รายการตอน</h2>
+        <div class="chapter-list" id="chapterList"></div>
+    </div>
+
+</div>
+
+<script src="firebase.js"></script>
+<script src="toast.js"></script>
+<script>
+
+const params = new URLSearchParams(location.search);
+const mangaID = params.get("id");
+
+let mangaData = {};
+let chapters = [];
+
+function toggleTheme(){
+    const goingLight = !document.body.classList.contains("light-mode");
+    const apply = ()=>{
+        document.body.classList.toggle("light-mode", goingLight);
+        localStorage.setItem("theme", goingLight ? "light" : "dark");
+    };
+    if(document.startViewTransition){
+        document.startViewTransition(apply);
+    } else {
+        apply();
+    }
+}
+if(localStorage.getItem("theme") === "light") document.body.classList.add("light-mode");
+
+function getBookmarks(){ return JSON.parse(localStorage.getItem("bookmarks") || "[]"); }
+
+function updateBmBtn(){
+    const saved = getBookmarks().includes(mangaID);
+    const btn = document.getElementById("bmBtn");
+    btn.classList.toggle("saved", saved);
+    btn.innerHTML = saved
+        ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg> อยู่ในบุ๊กมาร์ก`
+        : `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg> เพิ่มบุ๊กมาร์ก`;
+}
+
+function toggleBm(){
+    let bm = getBookmarks();
+    const i = bm.indexOf(mangaID);
+    if(i >= 0) bm.splice(i,1); else bm.push(mangaID);
+    localStorage.setItem("bookmarks", JSON.stringify(bm));
+    updateBmBtn();
+}
+
+function goBack(e){ e.preventDefault(); history.back(); }
+
+// ================= RATING / VOTE =================
+
+let ratingData = { total: 0, count: 0 };
+let currentUser = null;
+let myVoteFromDb = 0;
+let hoverVal = 0;
+
+// ---------- Auth (สถานะล็อกอินมาจากหน้าหลัก) ----------
+
+auth.onAuthStateChanged(async user=>{
+    // ยอมรับเฉพาะบัญชี Google เท่านั้น
+    const isGoogle = user && user.providerData.some(p=> p.providerId === "google.com");
+    currentUser = isGoogle ? user : null;
+    document.getElementById("googleLoginBtn").style.display = currentUser ? "none" : "inline-flex";
+
+    // ปุ่มเคลียร์โหวตของฉัน
+    document.getElementById("clearVoteBtn").style.display =
+        (currentUser && myVoteFromDb) ? "inline-block" : "none";
+
+    if(currentUser){
+        try {
+            const v = await db.collection("mangas").doc(mangaID)
+                .collection("votes").doc(user.uid).get();
+            myVoteFromDb = v.exists ? Number(v.data().score) : 0;
+        } catch(e){ myVoteFromDb = 0; }
+    } else {
+        myVoteFromDb = 0;
+    }
+    renderStars();
+});
+
+// ---------- แสดงดาว 1-5 (hover preview) ----------
+
+function renderStars(){
+    const row = document.getElementById("starRow");
+    const avg = ratingData.count ? (ratingData.total / ratingData.count) : 0;
+    const mine = myVoteFromDb;
+    const show = hoverVal || mine; // ตอน hover แสดงตามเมาส์
+
+    document.getElementById("dRating").textContent =
+        (ratingData.count ? avg.toFixed(1) : "—") + " ★";
+
+    const info = document.getElementById("voteInfo");
+    if(!currentUser){
+        info.innerHTML = ratingData.count
+            ? `คะแนนเฉลี่ย ${avg.toFixed(1)} (${ratingData.count} โหวต) · <span class="emoji">🔒</span> ล็อกอินเพื่อโหวต`
+            : `<span class="emoji">🔒</span> ล็อกอินเพื่อโหวต`;
+    } else if(hoverVal){
+        info.textContent = `โหวต ${hoverVal} คะแนน?`;
+    } else {
+        info.textContent = ratingData.count
+            ? `${avg.toFixed(1)} (${ratingData.count} โหวต)` + (mine ? ` · คุณให้ ${mine}` : "")
+            : "ยังไม่มีคนโหวต";
+    }
+
+    document.getElementById("clearVoteBtn").style.display =
+        (currentUser && mine && !hoverVal) ? "inline-block" : "none";
+
+    row.innerHTML = "";
+
+    // 5 ดาวเต็ม = 1-5 คะแนน
+    for(let i=1; i<=5; i++){
+        const star = document.createElement("span");
+        star.className = "star" + (show >= i ? " filled" : "");
+        star.textContent = "★";
+
+        if(currentUser){
+            star.style.cursor = "pointer";
+            star.onmouseenter = ()=>{ hoverVal = i; renderStars(); };
+            star.onclick = ()=> vote(i);
+        } else {
+            star.style.cursor = "pointer";
+            star.onclick = ()=>{ alert("กรุณาล็อกอินด้วย Google ก่อนโหวต"); loginGoogle(); };
+        }
+
+        row.appendChild(star);
+    }
+
+    // ออกจาก hover
+    row.onmouseleave = ()=>{ if(hoverVal){ hoverVal = 0; renderStars(); } };
+}
+
+// ---------- โหวต / แก้คะแนน ----------
+
+async function vote(score){
+    if(!currentUser){
+        alert("กรุณาล็อกอินด้วย Google ก่อนโหวต");
+        loginGoogle();
+        return;
+    }
+
+    const old = myVoteFromDb;
+
+    try {
+        const batch = db.batch();
+        const votesRef = db.collection("mangas").doc(mangaID)
+            .collection("votes").doc(currentUser.uid);
+
+        if(old){
+            // แก้คะแนน: ปรับผลรวมตามส่วนต่าง
+            batch.update(votesRef, { score: score, votedAt: firebase.firestore.FieldValue.serverTimestamp() });
+            batch.set(db.collection("mangas").doc(mangaID), {
+                ratingTotal: firebase.firestore.FieldValue.increment(score - old)
+            }, { merge: true });
+        } else {
+            // โหวตใหม่
+            batch.set(votesRef, {
+                score: score,
+                uid: currentUser.uid,
+                name: currentUser.displayName || "",
+                votedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            batch.set(db.collection("mangas").doc(mangaID), {
+                ratingTotal: firebase.firestore.FieldValue.increment(score),
+                ratingCount: firebase.firestore.FieldValue.increment(1)
+            }, { merge: true });
+        }
+
+        await batch.commit();
+
+        ratingData.total += (score - old);
+        if(!old) ratingData.count += 1;
+        myVoteFromDb = score;
+        renderStars();
+        alert(old ? `แก้คะแนนเป็น ${score} ★ แล้ว` : `ขอบคุณสำหรับคะแนน ${score} ★`);
+    } catch(e){
+        console.error("Vote failed", e);
+        alert("โหวตไม่สำเร็จ");
+    }
+}
+
+// ---------- ลบโหวตของฉัน ----------
+
+async function clearMyVote(){
+    if(!currentUser || !myVoteFromDb) return;
+    if(!confirm(`ลบโหวต ${myVoteFromDb} ★ ของคุณ?`)) return;
+
+    try {
+        const batch = db.batch();
+        batch.delete(db.collection("mangas").doc(mangaID)
+            .collection("votes").doc(currentUser.uid));
+        batch.set(db.collection("mangas").doc(mangaID), {
+            ratingTotal: firebase.firestore.FieldValue.increment(-myVoteFromDb),
+            ratingCount: firebase.firestore.FieldValue.increment(-1)
+        }, { merge: true });
+        await batch.commit();
+
+        ratingData.total -= myVoteFromDb;
+        ratingData.count -= 1;
+        myVoteFromDb = 0;
+        renderStars();
+        alert("ลบโหวตแล้ว");
+    } catch(e){
+        console.error(e);
+        alert("ลบโหวตไม่สำเร็จ");
+    }
+}
+
+async function load(){
+    if(!mangaID){ document.getElementById("dTitle").textContent = "ไม่พบ ID"; return; }
+
+    const doc = await db.collection("mangas").doc(mangaID).get();
+    if(!doc.exists){ document.getElementById("dTitle").textContent = "ไม่พบมังงะ"; return; }
+
+    mangaData = {id:doc.id, ...doc.data()};
+
+    document.title = mangaData.title;
+    document.getElementById("bannerImg").src = mangaData.coverUrl || "";
+    document.getElementById("coverImg").src = mangaData.coverUrl || "";
+    document.getElementById("dTitle").textContent = mangaData.title;
+    document.getElementById("dThaiTitle").textContent = mangaData.thaiTitle || "";
+    document.getElementById("dSynopsis").textContent = mangaData.synopsis || "ยังไม่มีเรื่องย่อ";
+    document.getElementById("dViews").textContent =
+        Number(mangaData.viewCount||0).toLocaleString("th-TH") + "+";
+
+    // rating
+    ratingData.total = Number(mangaData.ratingTotal || 0);
+    ratingData.count = Number(mangaData.ratingCount || 0);
+    renderStars();
+
+    // tags — แสดงทุกแนว + กดไปกรองหมวดในหน้าแรก
+    const tags = document.getElementById("genreTags");
+    tags.innerHTML = "";
+    const cats = mangaData.categories || (mangaData.category ? [mangaData.category] : []);
+    cats.filter(Boolean).forEach(c=>{
+        const s = document.createElement("span");
+        s.textContent = c;
+        s.style.cursor = "pointer";
+        s.title = "ดูมังงะแนว " + c;
+        s.onclick = ()=> location.href = "index.html?cat=" + encodeURIComponent(c);
+        tags.appendChild(s);
+    });
+
+    // chapters
+    const snap = await db.collection("mangas").doc(mangaID)
+        .collection("chapters").orderBy("chapter","asc").get();
+
+    const list = document.getElementById("chapterList");
+    list.innerHTML = "";
+
+    snap.forEach(d=>{
+        chapters.push(d.data().chapter);
+        const a = document.createElement("a");
+        a.href = `read.html?id=${mangaID}&ep=${d.data().chapter}`;
+        a.textContent = `ตอนที่ ${d.data().chapter}`;
+        list.appendChild(a);
+    });
+
+    document.getElementById("dChapters").textContent = chapters.length;
+
+    if(chapters.length){
+        document.getElementById("readBtn").href =
+            `read.html?id=${mangaID}&ep=${chapters[chapters.length-1]}`;
+    } else {
+        document.getElementById("readBtn").style.display = "none";
+    }
+
+    updateBmBtn();
+}
+
+load();
+</script>
+
+</body>
+</html>
